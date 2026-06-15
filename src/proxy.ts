@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { decrypt } from "@/lib/auth";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const session = request.cookies.get("stackshack_session")?.value;
   const { pathname } = request.nextUrl;
 
