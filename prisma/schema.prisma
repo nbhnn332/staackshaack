@@ -1,0 +1,177 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  role         String     @default("USER") // "USER" | "ADMIN"
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  wishlist     Wishlist?
+  cart         Cart?
+  orders       Order[]
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  slug      String    @unique
+  image     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Product {
+  id             String         @id @default(uuid())
+  name           String
+  slug           String         @unique
+  description    String
+  price          Float
+  compareAtPrice Float?
+  images         String[]       // URLs to images
+  categoryId     String
+  category       Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  isFeatured     Boolean        @default(false)
+  isBestSeller   Boolean        @default(false)
+  isNewArrival   Boolean        @default(false)
+  isActive       Boolean        @default(true)
+  stock          Int            @default(0)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  cartItems      CartItem[]
+  wishlistItems  WishlistItem[]
+  orderItems     OrderItem[]
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String?    @unique
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  items     CartItem[]
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Wishlist {
+  id        String         @id @default(uuid())
+  userId         String         @unique
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  items          WishlistItem[]
+}
+
+model WishlistItem {
+  id         String   @id @default(uuid())
+  wishlistId String
+  wishlist   Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Order {
+  id                 String      @id @default(uuid())
+  userId             String?
+  user               User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  status             String      @default("PENDING") // "PENDING" | "PROCESSING" | "SHIPPED" | "DELIVERED" | "CANCELLED"
+  paymentStatus      String      @default("PENDING") // "PENDING" | "PAID" | "FAILED"
+  razorpayOrderId    String?
+  razorpayPaymentId  String?
+  razorpaySignature  String?
+  trackingNumber     String?
+  tax                Float       @default(0)
+  shippingFee        Float       @default(0)
+  invoiceNumber      String?     @unique
+  total              Float
+  couponCode         String?
+  discount           Float       @default(0)
+  email              String
+  name               String
+  address            String
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  items              OrderItem[]
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity  Int
+  price     Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Banner {
+  id          String   @id @default(uuid())
+  title       String
+  subtitle    String?
+  description String?
+  image       String
+  link        String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Coupon {
+  id            String    @id @default(uuid())
+  code          String    @unique
+  discountType  String    // "FIXED" | "PERCENTAGE"
+  discountValue Float
+  minPurchase   Float     @default(0)
+  expiryDate    DateTime?
+  usageLimit    Int?
+  usageCount    Int       @default(0)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Settings {
+  id                 String   @id @default("global-settings")
+  websiteName        String   @default("Stack Shack Nutrition")
+  storeEmail         String   @default("support@stackshack.com")
+  storePhone         String   @default("+1 (800) 555-GAIN")
+  storeAddress       String   @default("123 Performance Way, Fitness Suite A")
+  seoTitle           String   @default("Stack Shack Nutrition | Premium Supplements & Protein")
+  seoDescription     String   @default("Experience premium nutrition, protein, creatine, and pre-workout formulas. Buy quality athletic supplements online at Stack Shack Nutrition.")
+  shippingFreeLimit  Float    @default(50)
+  shippingFee        Float    @default(5.99)
+  taxRate            Float    @default(0) // Percentage (e.g. 5 for 5%)
+  razorpayKeyId      String?
+  razorpayKeySecret  String?
+  resendApiKey       String?
+  cloudinaryCloudName String?
+  cloudinaryApiKey   String?
+  cloudinaryApiSecret String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
