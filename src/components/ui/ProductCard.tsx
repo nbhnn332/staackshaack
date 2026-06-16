@@ -188,13 +188,14 @@ export default function ProductCard({ product }: ProductCardProps) {
             </span>
           </div>
 
-          <button
-            onClick={handleAddToCart}
-            disabled={loading || product.stock <= 0}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-[#4285F4] text-white transition-all hover:bg-[#3367D6] active:scale-95 cursor-pointer shadow-sm disabled:bg-gray-300 z-10"
-          >
-            <ShoppingBag className="h-4 w-4" />
-          </button>
+
+<Link href={`/shop/${product.slug}`}>
+  <button
+    className="h-9 px-4 rounded-full bg-[#4285F4] text-white text-xs font-semibold transition-all hover:bg-[#3367D6] active:scale-95 shadow-sm cursor-pointer"
+  >
+    View Product
+  </button>
+</Link>
         </div>
       </div>
     </div>
