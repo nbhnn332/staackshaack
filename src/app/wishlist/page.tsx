@@ -41,7 +41,7 @@ export default function WishlistPage() {
   return (
     <div className="w-full bg-[#FFFFFF] min-h-screen py-8 mb-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        
+
         {/* Header Summary */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-5">
           <div>
@@ -49,6 +49,7 @@ export default function WishlistPage() {
               <Heart className="h-7 w-7 text-[#4285F4] fill-[#4285F4]" />
               My Wishlist
             </h1>
+            <p>‎ </p>
             <p className="text-sm text-gray-500 mt-1">
               You have <span className="font-semibold text-gray-800">{wishlist.length}</span> items saved in your collection.
             </p>
@@ -56,10 +57,14 @@ export default function WishlistPage() {
 
           {wishlist.length > 0 && (
             <Button
-              onClick={moveAllWishlistToCart}
-              className="mt-4 sm:mt-0 rounded-full bg-[#4285F4] hover:bg-[#3367D6] text-white font-bold px-6 py-5 shadow-xs"
+              onClick={async () => {
+                for (const item of wishlist) {
+                  await toggleWishlist(item.product.id);
+                }
+              }}
+              className="mt-4 sm:mt-0 rounded-full bg-blue-500 hover:bg-blue-600 text-white font-bold px-6 py-5 shadow-xs"
             >
-              Move All to Cart
+              Remove All
             </Button>
           )}
         </div>
@@ -80,7 +85,7 @@ export default function WishlistPage() {
           <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             {wishlist.map((item) => {
               const p = item.product;
-              
+
               // Helper to draw graphics
               const drawIcon = (name: string) => {
                 let grad = "from-blue-500 to-indigo-600";
@@ -88,7 +93,7 @@ export default function WishlistPage() {
                 else if (name.includes("Vitamin")) grad = "from-teal-400 to-emerald-500";
                 else if (name.includes("Bars")) grad = "from-amber-500 to-yellow-600";
                 else if (name.includes("Creatine")) grad = "from-purple-600 to-pink-500";
-                
+
                 return (
                   <div className={`h-full w-full bg-gradient-to-br ${grad} flex items-center justify-center relative`}>
                     <svg className="w-10 h-10 text-white/95" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -108,11 +113,15 @@ export default function WishlistPage() {
                   className="flex flex-col justify-between overflow-hidden rounded-2xl border border-gray-100 bg-white p-4 transition-all duration-300 hover:shadow-md hover:border-gray-200"
                 >
                   <div className="flex gap-4">
-                    {/* Visual box */}
+                    {/* Product Image */}
                     <div className="h-20 w-20 rounded-xl overflow-hidden bg-gray-50 shrink-0">
-                      {drawIcon(p.name)}
+                      <img
+                        src={p.images?.[0] || "/placeholder.png"}
+                        alt={p.name}
+                        className="h-full w-full object-cover"
+                      />
                     </div>
-                    
+
                     {/* Title & Info */}
                     <div className="flex-1 min-w-0">
                       <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
@@ -138,14 +147,14 @@ export default function WishlistPage() {
                     >
                       <Trash2 className="h-5 w-5" />
                     </button>
-                    
-                    <Button
-                      onClick={() => handleAddToCart(p.id)}
+
+                    <Link
+                      href={`/shop/${p.slug}`}
                       className="flex-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#4285F4] font-bold text-xs py-4 flex items-center justify-center gap-1.5 shadow-none border border-transparent"
                     >
-                      <ShoppingBag className="h-4.5 w-4.5" />
-                      <span>Add to Cart</span>
-                    </Button>
+                      <ArrowRight className="h-4.5 w-4.5" />
+                      <span>View Product</span>
+                    </Link>
                   </div>
                 </div>
               );

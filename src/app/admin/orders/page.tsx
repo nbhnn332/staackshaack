@@ -51,7 +51,7 @@ export default function AdminOrders() {
           MobileNumber: mobileNumber,
           Email: o.email,
           ExactProductName: "N/A",
-          ProductWeight: "N/A",
+          ProductVariant: "N/A",
           Quantity: 0,
           UnitPrice: 0,
           LineTotal: 0,
@@ -64,6 +64,7 @@ export default function AdminOrders() {
         o.items.forEach((item: any) => {
           const fallbackProduct = getProductInfo(item.productId);
           const exactName = item.productName || fallbackProduct?.name || "Unknown Product";
+          const variantLabel = [item.variantWeight, item.variantFlavour].filter(Boolean).join(" · ");
           
           dataToExport.push({
             InvoiceNumber: o.invoiceNumber || "",
@@ -71,7 +72,7 @@ export default function AdminOrders() {
             MobileNumber: mobileNumber,
             Email: o.email,
             ExactProductName: exactName,
-            ProductWeight: `${item.weight} ${item.weightUnit}`,
+            ProductVariant: variantLabel || `${item.weight} ${item.weightUnit}`,
             Quantity: item.quantity,
             UnitPrice: item.price,
             LineTotal: item.quantity * item.price,
@@ -542,6 +543,7 @@ export default function AdminOrders() {
                           const p = getProductInfo(item.productId);
                           const imgUrl = item.productImage || p?.images?.[0] || "";
                           const productName = item.productName || p?.name || "Premium Sport Supplement";
+                          const variantLabel = [item.variantWeight, item.variantFlavour].filter(Boolean).join(" · ");
                           return (
                             <tr key={i}>
                               <td className="px-4 py-3 flex items-center gap-3">
@@ -554,11 +556,14 @@ export default function AdminOrders() {
                                 )}
                                 <div>
                                   <div className="font-bold text-gray-900">{productName}</div>
+                                  {variantLabel && (
+                                    <div className="text-[10px] text-[#4285F4] font-semibold mt-0.5">{variantLabel}</div>
+                                  )}
                                   <div className="text-[10px] text-gray-400 mt-0.5">{p?.slug || `id: ${item.productId}`}</div>
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center text-gray-600">
-                                {item.weight} {item.weightUnit}
+                                {variantLabel || `${item.weight} ${item.weightUnit}`}
                               </td>
                               <td className="px-4 py-3 text-center text-gray-800 font-bold">{item.quantity}</td>
                               <td className="px-4 py-3 text-right text-gray-800">{formatINR(item.price)}</td>

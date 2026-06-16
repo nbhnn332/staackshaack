@@ -4,10 +4,12 @@ import { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/context/StoreContext";
-import { ArrowLeft, ShoppingBag, Heart, Star, Truck, ShieldCheck, RefreshCw, Loader2, ArrowRight } from "lucide-react";
+import { ArrowLeft, ShoppingBag, Heart, Star, Truck, ShieldCheck, RefreshCw, Loader2, ArrowRight, Box } from "lucide-react";
 import { formatINR } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import ProductCard from "@/components/ui/ProductCard";
+import { getVariantsByProductAction } from "@/app/actions";
+import { ProductVariant } from "@/lib/mock-db";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -20,12 +22,45 @@ export default function ProductDetailPage({ params }: PageProps) {
 
   const [quantity, setQuantity] = useState(1);
   const [adding, setAdding] = useState(false);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [selectedWeight, setSelectedWeight] = useState<string>("");
+  const [selectedFlavour, setSelectedFlavour] = useState<string>("");
+  const [variantsLoading, setVariantsLoading] = useState(true);
 
   const product = products.find((p) => p.slug === resolvedParams.slug);
 
+  // Load variants when product is found
+  useEffect(() => {
+    if (!product) return;
+    setVariantsLoading(true);
+    getVariantsByProductAction(product.id)
+      .then((v) => {
+        const active = v.filter((x) => x.isActive);
+        setVariants(active);
 
+        if (active.length > 0) {
+          // Pre-select first available (in-stock) variant
+          const firstInStock = active.find((x) => x.stock > 0) || active[0];
+          setSelectedWeight(firstInStock.weightLabel);
+          setSelectedFlavour(firstInStock.flavourLabel);
+          setSelectedVariant(firstInStock);
+        }
+      })
+      .catch(console.error)
+      .finally(() => setVariantsLoading(false));
+  }, [product?.id]);
 
-  if (loading) {
+  // When weight or flavour changes, find the matching variant
+  useEffect(() => {
+    if (variants.length === 0) return;
+    const match = variants.find(
+      (v) => v.weightLabel === selectedWeight && v.flavourLabel === selectedFlavour
+    );
+    setSelectedVariant(match || null);
+  }, [selectedWeight, selectedFlavour, variants]);
+
+  if (loading || variantsLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-gray-400">
         <Loader2 className="h-8 w-8 animate-spin text-[#4285F4]" />
@@ -50,18 +85,61 @@ export default function ProductDetailPage({ params }: PageProps) {
     );
   }
 
-  const favorite = isInWishlist(product.id);
-  const currentPrice = product.price;
-  const currentComparePrice = product.compareAtPrice;
-  const currentStock = product.stock;
+  const hasVariants = variants.length > 0;
 
-  const discount = currentComparePrice
-    ? Math.round(((currentComparePrice - currentPrice) / currentComparePrice) * 100)
+  // Derive display values from selected variant (or fall back to product base)
+  const currentPrice = selectedVariant ? selectedVariant.price : product.price;
+  const currentMrp = selectedVariant ? (selectedVariant.mrp ?? product.compareAtPrice) : product.compareAtPrice;
+  const currentStock = selectedVariant ? selectedVariant.stock : product.stock;
+  const isOutOfStock = currentStock <= 0 || (hasVariants && !selectedVariant);
+
+  const discount = currentMrp
+    ? Math.round(((currentMrp - currentPrice) / currentMrp) * 100)
     : 0;
 
+  // Derive unique option lists
+  const uniqueWeights = [...new Set(variants.map((v) => v.weightLabel).filter(Boolean))];
+  const uniqueFlavours = [...new Set(variants.map((v) => v.flavourLabel).filter(Boolean))];
+
+  // Is a given weight selectable given the current flavour?
+  const isWeightAvailable = (w: string) => {
+    if (!selectedFlavour) return true;
+    return variants.some((v) => v.weightLabel === w && v.flavourLabel === selectedFlavour && v.isActive);
+  };
+
+  // Is a given flavour selectable given the current weight?
+  const isFlavourAvailable = (f: string) => {
+    if (!selectedWeight) return true;
+    return variants.some((v) => v.flavourLabel === f && v.weightLabel === selectedWeight && v.isActive);
+  };
+
+  const handleWeightSelect = (w: string) => {
+    setSelectedWeight(w);
+    // If current flavour doesn't exist for this weight, pick the first one that does
+    const flavourStillValid = variants.some(
+      (v) => v.weightLabel === w && v.flavourLabel === selectedFlavour && v.isActive
+    );
+    if (!flavourStillValid && uniqueFlavours.length > 0) {
+      const firstValid = variants.find((v) => v.weightLabel === w && v.isActive);
+      setSelectedFlavour(firstValid?.flavourLabel || "");
+    }
+  };
+
+  const handleFlavourSelect = (f: string) => {
+    setSelectedFlavour(f);
+    const weightStillValid = variants.some(
+      (v) => v.flavourLabel === f && v.weightLabel === selectedWeight && v.isActive
+    );
+    if (!weightStillValid && uniqueWeights.length > 0) {
+      const firstValid = variants.find((v) => v.flavourLabel === f && v.isActive);
+      setSelectedWeight(firstValid?.weightLabel || "");
+    }
+  };
+
   const handleAddToCart = async () => {
+    if (isOutOfStock) return;
     setAdding(true);
-    await addToCart(product.id, quantity);
+    await addToCart(product.id, quantity, selectedVariant?.id || null);
     setAdding(false);
   };
 
@@ -69,19 +147,19 @@ export default function ProductDetailPage({ params }: PageProps) {
     await toggleWishlist(product.id);
   };
 
-  // Find related products in the same category
+  const favorite = isInWishlist(product.id);
+
   const related = products
     .filter((p) => p.categoryId === product.categoryId && p.id !== product.id)
     .slice(0, 4);
 
-  // SVG Graphics generator
   const drawIcon = (name: string) => {
     let grad = "from-blue-500 to-indigo-600";
     if (name.includes("Pre-Workout")) grad = "from-red-500 to-orange-500";
     else if (name.includes("Vitamin")) grad = "from-teal-400 to-emerald-500";
     else if (name.includes("Bars")) grad = "from-amber-500 to-yellow-600";
     else if (name.includes("Creatine")) grad = "from-purple-600 to-pink-500";
-    
+
     return (
       <div className={`h-full w-full bg-gradient-to-br ${grad} flex items-center justify-center relative`}>
         <svg className="w-32 h-32 text-white/95" width="128" height="128" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
@@ -99,7 +177,7 @@ export default function ProductDetailPage({ params }: PageProps) {
   return (
     <div className="w-full bg-[#FFFFFF] min-h-screen py-8 mb-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        
+
         {/* Back navigation */}
         <button
           onClick={() => router.back()}
@@ -111,7 +189,7 @@ export default function ProductDetailPage({ params }: PageProps) {
 
         {/* Details Layout Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12 items-start">
-          
+
           {/* Left: Visual Jar Showcase */}
           <div className="relative aspect-square w-full overflow-hidden rounded-[32px] bg-gray-50 border border-gray-100 shadow-xs">
             {product.images && product.images.length > 0 && product.images[0] && !product.images[0].startsWith("data:") ? (
@@ -146,7 +224,7 @@ export default function ProductDetailPage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Right: Text Configuration Info */}
+          {/* Right: Info & Selectors */}
           <div className="flex flex-col">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-gray-100 px-3 py-1 rounded-full self-start">
               {product.name.includes("Protein") ? "Proteins" : product.name.includes("Pre-Workout") ? "Pre-Workouts" : product.name.includes("Vitamin") ? "Vitamins" : product.name.includes("Bars") ? "Snacks" : "Creatine"}
@@ -169,14 +247,79 @@ export default function ProductDetailPage({ params }: PageProps) {
             {/* Prices */}
             <div className="flex items-baseline gap-3.5 mt-6">
               <span className="text-3xl font-black text-gray-950">{formatINR(currentPrice)}</span>
-              {currentComparePrice && (
+              {currentMrp && currentMrp > currentPrice && (
                 <span className="text-lg text-gray-400 line-through font-medium">
-                  {formatINR(currentComparePrice)}
+                  {formatINR(currentMrp)}
+                </span>
+              )}
+              {discount > 0 && (
+                <span className="text-sm font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                  Save {discount}%
                 </span>
               )}
             </div>
 
+            {/* ── WEIGHT SELECTOR ───────────────────── */}
+            {hasVariants && uniqueWeights.length > 0 && (
+              <div className="mt-6">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2.5">
+                  Size / Weight
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {uniqueWeights.map((w) => {
+                    const available = isWeightAvailable(w);
+                    const selected = selectedWeight === w;
+                    return (
+                      <button
+                        key={w}
+                        onClick={() => available && handleWeightSelect(w)}
+                        disabled={!available}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all duration-150 cursor-pointer
+                          ${selected
+                            ? "border-[#4285F4] bg-[#4285F4] text-white shadow-md shadow-blue-100"
+                            : available
+                              ? "border-gray-200 text-gray-700 hover:border-[#4285F4] hover:text-[#4285F4] bg-white"
+                              : "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed line-through"
+                          }`}
+                      >
+                        {w}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
+            {/* ── FLAVOUR SELECTOR ──────────────────── */}
+            {hasVariants && uniqueFlavours.length > 0 && (
+              <div className="mt-5">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2.5">
+                  Flavour
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {uniqueFlavours.map((f) => {
+                    const available = isFlavourAvailable(f);
+                    const selected = selectedFlavour === f;
+                    return (
+                      <button
+                        key={f}
+                        onClick={() => available && handleFlavourSelect(f)}
+                        disabled={!available}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all duration-150 cursor-pointer
+                          ${selected
+                            ? "border-[#4285F4] bg-[#4285F4] text-white shadow-md shadow-blue-100"
+                            : available
+                              ? "border-gray-200 text-gray-700 hover:border-[#4285F4] hover:text-[#4285F4] bg-white"
+                              : "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed line-through"
+                          }`}
+                      >
+                        {f}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Description */}
             <p className="text-sm text-gray-500 mt-6 leading-relaxed border-t border-b border-gray-100 py-6">
@@ -185,16 +328,21 @@ export default function ProductDetailPage({ params }: PageProps) {
 
             {/* Stock status indicator */}
             <div className="flex items-center gap-2 mt-6">
-              <span className={`h-2.5 w-2.5 rounded-full ${currentStock > 0 ? "bg-emerald-500" : "bg-red-500"}`}></span>
+              <span className={`h-2.5 w-2.5 rounded-full ${!isOutOfStock ? "bg-emerald-500" : "bg-red-500"}`}></span>
               <span className="text-xs font-semibold text-gray-700">
-                {currentStock > 0 ? `${currentStock} items left in stock (Ready to ship)` : "Temporarily Out of Stock"}
+                {hasVariants && !selectedVariant
+                  ? "Select a variant to check availability"
+                  : !isOutOfStock
+                    ? `${currentStock} items left in stock (Ready to ship)`
+                    : "Temporarily Out of Stock"
+                }
               </span>
             </div>
 
             {/* Cart checkout operations */}
-            {currentStock > 0 && (
-              <div className="flex flex-col sm:flex-row items-center gap-4 mt-8">
-                {/* Quantity select */}
+            <div className="flex flex-col sm:flex-row items-center gap-4 mt-8">
+              {/* Quantity select */}
+              {!isOutOfStock && (
                 <div className="flex items-center border border-gray-200 rounded-xl px-2.5 py-1">
                   <button
                     onClick={() => setQuantity((q) => Math.max(1, q - 1))}
@@ -210,48 +358,54 @@ export default function ProductDetailPage({ params }: PageProps) {
                     <span className="text-lg font-bold">+</span>
                   </button>
                 </div>
+              )}
 
-                {/* Add to Cart button */}
-                <Button
-                  onClick={handleAddToCart}
-                  disabled={adding}
-                  className="w-full sm:flex-1 rounded-xl bg-[#4285F4] hover:bg-[#3367D6] text-white py-6 font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-                >
-                  {adding ? (
-                    <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                  ) : (
-                    <>
-                      <ShoppingBag className="h-4.5 w-4.5" />
-                      <span>Add to Stack</span>
-                    </>
-                  )}
-                </Button>
-
-                {/* Wishlist toggle */}
-                <button
-                  onClick={handleToggleWishlist}
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all shrink-0 cursor-pointer ${
-                    favorite ? "text-red-500 border-red-100 bg-red-50/20" : "text-gray-400 hover:text-gray-600"
+              {/* Add to Cart button */}
+              <Button
+                onClick={handleAddToCart}
+                disabled={adding || isOutOfStock}
+                className={`w-full sm:flex-1 rounded-xl py-6 font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-all
+                  ${isOutOfStock
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "bg-[#4285F4] hover:bg-[#3367D6] text-white"
                   }`}
-                >
-                  <Heart className="h-5.5 w-5.5 stroke-[2]" fill={favorite ? "currentColor" : "none"} />
-                </button>
-              </div>
-            )}
+              >
+                {adding ? (
+                  <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                ) : isOutOfStock ? (
+                  <span>Out of Stock</span>
+                ) : (
+                  <>
+                    <ShoppingBag className="h-4.5 w-4.5" />
+                    <span>Add to Stack</span>
+                  </>
+                )}
+              </Button>
 
-            {/* Extra product trust highlights */}
+              {/* Wishlist toggle */}
+              <button
+                onClick={handleToggleWishlist}
+                className={`flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 hover:bg-gray-50 active:scale-95 transition-all shrink-0 cursor-pointer ${
+                  favorite ? "text-red-500 border-red-100 bg-red-50/20" : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                <Heart className="h-5.5 w-5.5 stroke-[2]" fill={favorite ? "currentColor" : "none"} />
+              </button>
+            </div>
+
+            {/* Trust highlights */}
             <div className="mt-8 grid grid-cols-3 gap-2 border-t border-gray-100 pt-6 text-[10px] sm:text-xs text-gray-400 text-center">
               <div className="flex flex-col items-center">
                 <Truck className="h-5 w-5 text-[#4285F4] mb-1" />
-                <span>Free Ship &gt; $50</span>
+                <span>Free Ship &gt; ₹500</span>
               </div>
               <div className="flex flex-col items-center">
                 <ShieldCheck className="h-5 w-5 text-[#4285F4] mb-1" />
-                <span>100% Secure</span>
+                <span>100% Secure payment</span>
               </div>
               <div className="flex flex-col items-center">
-                <RefreshCw className="h-5 w-5 text-[#4285F4] mb-1" />
-                <span>Easy Return</span>
+                <Box className="h-5 w-5 text-[#4285F4] mb-1" />
+                <span>Secure packaging</span>
               </div>
             </div>
 

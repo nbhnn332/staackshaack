@@ -37,3 +37,38 @@ export const supabase = new Proxy({} as SupabaseClient, {
     return value;
   },
 });
+
+let _supabaseAdmin: SupabaseClient | null = null;
+
+function getSupabaseAdminClient(): SupabaseClient {
+  if (_supabaseAdmin) return _supabaseAdmin;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  console.log("=== ADMIN CLIENT DEBUG ===");
+  console.log("Service key loaded:", !!supabaseServiceKey);
+  console.log("Starts with:", supabaseServiceKey?.substring(0, 20));
+  console.log("==========================");
+
+  if (!supabaseUrl || !supabaseServiceKey || supabaseUrl.includes("your_supabase")) {
+    console.warn(
+      "⚠️ SUPABASE_SERVICE_ROLE_KEY not configured. Falling back to anon client for admin operations."
+    );
+    _supabaseAdmin = getSupabaseClient();
+    return _supabaseAdmin;
+  }
+
+  _supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+  return _supabaseAdmin;
+}
+
+export const supabaseAdmin = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getSupabaseAdminClient();
+    const value = (client as any)[prop];
+    if (typeof value === "function") {
+      return value.bind(client);
+    }
+    return value;
+  },
+});

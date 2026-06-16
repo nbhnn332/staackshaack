@@ -1,5 +1,5 @@
-import { supabase } from "./supabase";
-import { Product, Category, User, Cart, Wishlist, Order, Banner, Coupon, Settings } from "./mock-db";
+import { supabase, supabaseAdmin } from "./supabase";
+import { Product, Category, User, Cart, Wishlist, Order, Banner, Coupon, Settings, ProductVariant } from "./mock-db";
 
 const generateId = () => crypto.randomUUID();
 
@@ -50,6 +50,21 @@ function mapProduct(row: any): Product {
   };
 }
 
+function mapProductVariant(row: any): ProductVariant {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    weightLabel: row.weight_label || "",
+    flavourLabel: row.flavour_label || "",
+    price: row.price,
+    mrp: row.mrp ?? null,
+    stock: row.stock,
+    sku: row.sku ?? null,
+    isActive: row.is_active,
+    createdAt: row.created_at,
+  };
+}
+
 function mapOrder(row: any): Order {
   return {
     id: row.id,
@@ -79,6 +94,9 @@ function mapOrder(row: any): Order {
       weightUnit: i.weight_unit || 'kg',
       productName: i.product_name || undefined,
       productImage: i.product_image || undefined,
+      variantId: i.variant_id || null,
+      variantWeight: i.variant_weight || null,
+      variantFlavour: i.variant_flavour || null,
     })),
   };
 }
@@ -196,7 +214,6 @@ export const db = {
     if (options?.onlyActive !== undefined) q = q.eq("is_active", options.onlyActive);
 
     if (options?.categorySlug) {
-      // First resolve category slug to ID
       const { data: cat } = await supabase
         .from("categories")
         .select("id")
@@ -297,6 +314,132 @@ export const db = {
     return true;
   },
 
+  // ── PRODUCT VARIANTS ─────────────────────────
+  async getVariantsByProductId(productId: string): Promise<ProductVariant[]> {
+    const { data, error } = await supabase
+      .from("product_variants")
+      .select("*")
+      .eq("product_id", productId)
+      .order("created_at", { ascending: true });
+    if (error) { console.error("Supabase getVariants error:", error); return []; }
+    return (data || []).map(mapProductVariant);
+  },
+
+  async getVariantById(id: string): Promise<ProductVariant | null> {
+    const { data, error } = await supabase
+      .from("product_variants")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error || !data) return null;
+    return mapProductVariant(data);
+  },
+
+  async addVariant(productId: string, data: Omit<ProductVariant, "id" | "productId" | "createdAt">): Promise<ProductVariant> {
+    const { data: row, error } = await supabaseAdmin
+      .from("product_variants")
+      .insert({
+        id: generateId(),
+        product_id: productId,
+        weight_label: data.weightLabel,
+        flavour_label: data.flavourLabel,
+        price: data.price,
+        mrp: data.mrp ?? null,
+        stock: data.stock,
+        sku: data.sku ?? null,
+        is_active: data.isActive,
+      })
+      .select()
+      .single();
+    if (error) {
+      console.error("Supabase addVariant error:", JSON.stringify(error, null, 2));
+      throw new Error(`addVariant failed: ${error.message}`);
+    }
+    return mapProductVariant(row);
+  },
+
+  async updateVariant(id: string, data: Partial<Omit<ProductVariant, "id" | "productId" | "createdAt">>): Promise<ProductVariant | null> {
+    const update: any = {};
+    if (data.weightLabel !== undefined) update.weight_label = data.weightLabel;
+    if (data.flavourLabel !== undefined) update.flavour_label = data.flavourLabel;
+    if (data.price !== undefined) update.price = data.price;
+    if (data.mrp !== undefined) update.mrp = data.mrp;
+    if (data.stock !== undefined) update.stock = data.stock;
+    if (data.sku !== undefined) update.sku = data.sku;
+    if (data.isActive !== undefined) update.is_active = data.isActive;
+
+    const { data: row, error } = await supabaseAdmin
+      .from("product_variants")
+      .update(update)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      console.error("Supabase updateVariant error:", JSON.stringify(error, null, 2), "Query:", update, "id:", id);
+      return null;
+    }
+    return mapProductVariant(row);
+  },
+
+  async deleteVariant(id: string): Promise<boolean> {
+    const { error } = await supabaseAdmin.from("product_variants").delete().eq("id", id);
+    if (error) {
+      console.error("Supabase deleteVariant error:", JSON.stringify(error, null, 2), "id:", id);
+      return false;
+    }
+    return true;
+  },
+
+  /**
+   * Bulk replace all variants for a product:
+   * deletes removed ones, inserts new ones, updates existing ones.
+   */
+  async bulkUpsertVariants(
+    productId: string,
+    variants: Array<{
+      id?: string;
+      weightLabel: string;
+      flavourLabel: string;
+      price: number;
+      mrp?: number | null;
+      stock: number;
+      sku?: string | null;
+      isActive: boolean;
+    }>
+  ): Promise<ProductVariant[]> {
+    // Delete all existing variants for this product then re-insert
+    const { error: deleteError } = await supabaseAdmin.from("product_variants").delete().eq("product_id", productId);
+    if (deleteError) {
+      console.error("Supabase bulkUpsertVariants (DELETE phase) error:", JSON.stringify(deleteError, null, 2), "productId:", productId);
+      throw new Error(`bulkUpsertVariants (delete) failed: ${deleteError.message}`);
+    }
+
+    if (variants.length === 0) return [];
+
+    const rows = variants.map((v) => ({
+      id: v.id || generateId(),
+      product_id: productId,
+      weight_label: v.weightLabel,
+      flavour_label: v.flavourLabel,
+      price: v.price,
+      mrp: v.mrp ?? null,
+      stock: v.stock,
+      sku: v.sku ?? null,
+      is_active: v.isActive,
+    }));
+
+    const { data, error } = await supabaseAdmin
+      .from("product_variants")
+      .insert(rows)
+      .select();
+
+    if (error) {
+      console.error("Supabase bulkUpsertVariants (INSERT phase) error:", JSON.stringify(error, null, 2), "Payload:", JSON.stringify(rows, null, 2));
+      throw new Error(`bulkUpsertVariants (insert) failed: ${error.message}`);
+    }
+    return (data || []).map(mapProductVariant);
+  },
+
   // ── USERS ───────────────────────────────────
   async getUserByEmail(email: string): Promise<User | null> {
     const { data, error } = await supabase
@@ -349,7 +492,6 @@ export const db = {
 
   // ── CARTS ───────────────────────────────────
   async getCart(userIdOrGuestId: string): Promise<Cart> {
-    // Try to find existing cart
     let { data: cart } = await supabase
       .from("carts")
       .select("*, cart_items(*)")
@@ -357,14 +499,12 @@ export const db = {
       .single();
 
     if (!cart) {
-      // Create new cart
       const { data: newCart, error } = await supabase
         .from("carts")
         .insert({ id: generateId(), user_id: userIdOrGuestId })
         .select("*, cart_items(*)")
         .single();
       if (error) {
-        // Return empty cart on failure
         return { id: generateId(), userId: userIdOrGuestId, items: [] };
       }
       cart = newCart;
@@ -377,16 +517,17 @@ export const db = {
         id: item.id,
         productId: item.product_id,
         quantity: item.quantity,
+        variantId: item.variant_id || null,
       })),
     };
   },
 
-  async addToCart(userIdOrGuestId: string, productId: string, quantity: number = 1): Promise<Cart> {
+  async addToCart(userIdOrGuestId: string, productId: string, quantity: number = 1, variantId?: string | null): Promise<Cart> {
     const cart = await this.getCart(userIdOrGuestId);
-    
-    // An item is only "existing" if it matches productId
+
+    // Match by productId AND variantId so different variants are separate line items
     const existing = cart.items.find(
-      (item) => item.productId === productId
+      (item) => item.productId === productId && (item.variantId || null) === (variantId || null)
     );
 
     if (existing) {
@@ -400,6 +541,7 @@ export const db = {
         cart_id: cart.id,
         product_id: productId,
         quantity,
+        variant_id: variantId || null,
       });
     }
 
@@ -510,7 +652,16 @@ export const db = {
       total: number;
       paymentStatus?: string;
       razorpayOrderId?: string;
-      items: { productId: string; quantity: number; price: number; productName?: string; productImage?: string; }[];
+      items: {
+        productId: string;
+        quantity: number;
+        price: number;
+        productName?: string;
+        productImage?: string;
+        variantId?: string | null;
+        variantWeight?: string | null;
+        variantFlavour?: string | null;
+      }[];
     }
   ): Promise<Order> {
     const orderId = generateId();
@@ -539,7 +690,7 @@ export const db = {
 
     if (orderError) throw new Error(`createOrder failed: ${orderError.message}`);
 
-    // Insert order items
+    // Insert order items with variant snapshot
     const itemInserts = data.items.map((item) => ({
       id: generateId(),
       order_id: orderId,
@@ -548,28 +699,43 @@ export const db = {
       price: item.price,
       product_name: item.productName || null,
       product_image: item.productImage || null,
+      variant_id: item.variantId || null,
+      variant_weight: item.variantWeight || null,
+      variant_flavour: item.variantFlavour || null,
     }));
     await supabase.from("order_items").insert(itemInserts);
 
-    // If paid, decrement stock
+    // If paid, decrement stock on variants (or product base stock)
     if (data.paymentStatus === "PAID") {
       for (const item of data.items) {
-        // Decrement product base stock
-        const { data: prod } = await supabase
-          .from("products")
-          .select("stock")
-          .eq("id", item.productId)
-          .single();
-        if (prod) {
-          await supabase
+        if (item.variantId) {
+          const { data: variant } = await supabase
+            .from("product_variants")
+            .select("stock")
+            .eq("id", item.variantId)
+            .single();
+          if (variant) {
+            await supabase
+              .from("product_variants")
+              .update({ stock: Math.max(0, variant.stock - item.quantity) })
+              .eq("id", item.variantId);
+          }
+        } else {
+          const { data: prod } = await supabase
             .from("products")
-            .update({ stock: Math.max(0, prod.stock - item.quantity) })
-            .eq("id", item.productId);
+            .select("stock")
+            .eq("id", item.productId)
+            .single();
+          if (prod) {
+            await supabase
+              .from("products")
+              .update({ stock: Math.max(0, prod.stock - item.quantity) })
+              .eq("id", item.productId);
+          }
         }
       }
     }
 
-    // Fetch complete order with items
     const { data: fullOrder } = await supabase
       .from("orders")
       .select("*, order_items(*)")
@@ -622,24 +788,38 @@ export const db = {
     const { error } = await supabase.from("orders").update(update).eq("id", orderId);
     if (error) { console.error("Supabase updateOrderPaymentStatus error:", error); return null; }
 
-    // If PAID, deplete stock
+    // If PAID, deplete stock (variant or base product)
     if (paymentStatus === "PAID") {
       const { data: items } = await supabase
         .from("order_items")
-        .select("product_id, quantity")
+        .select("product_id, quantity, variant_id")
         .eq("order_id", orderId);
       if (items) {
         for (const item of items) {
-          const { data: prod } = await supabase
-            .from("products")
-            .select("stock")
-            .eq("id", item.product_id)
-            .single();
-          if (prod) {
-            await supabase
+          if (item.variant_id) {
+            const { data: variant } = await supabase
+              .from("product_variants")
+              .select("stock")
+              .eq("id", item.variant_id)
+              .single();
+            if (variant) {
+              await supabase
+                .from("product_variants")
+                .update({ stock: Math.max(0, variant.stock - item.quantity) })
+                .eq("id", item.variant_id);
+            }
+          } else {
+            const { data: prod } = await supabase
               .from("products")
-              .update({ stock: Math.max(0, prod.stock - item.quantity) })
-              .eq("id", item.product_id);
+              .select("stock")
+              .eq("id", item.product_id)
+              .single();
+            if (prod) {
+              await supabase
+                .from("products")
+                .update({ stock: Math.max(0, prod.stock - item.quantity) })
+                .eq("id", item.product_id);
+            }
           }
         }
       }
@@ -806,7 +986,6 @@ export const db = {
       .single();
 
     if (error || !created) {
-      // Return safe defaults
       return {
         id: "global-settings",
         websiteName: "Stack Shack Nutrition",
@@ -847,8 +1026,10 @@ export const db = {
       .from("settings")
       .update(update)
       .eq("id", "global-settings")
-      .select()
-      .single();
+      .select();
+
+    console.log("UPDATE RESULT:", row);
+    console.log("UPDATE ERROR:", error);
 
     if (error) { console.error("Supabase updateSettings error:", error); return this.getSettings(); }
     return mapSettings(row);

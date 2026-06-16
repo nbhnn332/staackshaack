@@ -40,10 +40,27 @@ export interface Product {
   createdAt?: string;
 }
 
+// ── VARIANT SYSTEM ────────────────────────────────────────────
+// Each ProductVariant is one combination of (weightLabel, flavourLabel)
+// with its own price, MRP, stock, SKU and active flag.
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  weightLabel: string;   // e.g. "250 g", "1 kg", "" (empty = no weight option)
+  flavourLabel: string;  // e.g. "Chocolate", "" (empty = no flavour option)
+  price: number;
+  mrp?: number | null;
+  stock: number;
+  sku?: string | null;
+  isActive: boolean;
+  createdAt?: string;
+}
+
 export interface CartItem {
   id: string;
   productId: string;
   quantity: number;
+  variantId?: string | null;
 }
 
 export interface Cart {
@@ -72,6 +89,10 @@ export interface OrderItem {
   weightUnit: string;
   productName?: string;
   productImage?: string;
+  // Variant snapshot — stored at order time so history is always correct
+  variantId?: string | null;
+  variantWeight?: string | null;
+  variantFlavour?: string | null;
 }
 
 export interface Order {

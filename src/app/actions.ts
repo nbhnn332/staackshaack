@@ -184,20 +184,74 @@ export async function getProductBySlugAction(slug: string) {
   return await db.getProductBySlug(slug);
 }
 
+// --- VARIANT ACTIONS ---
+
+export async function getVariantsByProductAction(productId: string) {
+  return await db.getVariantsByProductId(productId);
+}
+
+export async function adminSaveVariantsAction(
+  productId: string,
+  variants: Array<{
+    id?: string;
+    weightLabel: string;
+    flavourLabel: string;
+    price: number;
+    mrp?: number | null;
+    stock: number;
+    sku?: string | null;
+    isActive: boolean;
+  }>
+) {
+  await ensureAdmin();
+  const saved = await db.bulkUpsertVariants(productId, variants);
+  revalidatePath(`/shop`);
+  revalidatePath("/admin/products");
+  return { success: true, variants: saved };
+}
+
+export async function adminDeleteVariantAction(variantId: string) {
+  await ensureAdmin();
+  await db.deleteVariant(variantId);
+  return { success: true };
+}
+
 // --- CART ACTIONS ---
 
 export async function getCartAction() {
   const identifier = await getActiveIdentifier();
   const cart = await db.getCart(identifier);
-  
+
   const resolvedItems = [];
   for (const item of cart.items) {
     const product = await db.getProductById(item.productId);
     if (product) {
+      // Resolve variant info if present
+      let variantPrice: number | undefined;
+      let variantMrp: number | null | undefined;
+      let variantStock: number | undefined;
+      let variantWeight: string | null = null;
+      let variantFlavour: string | null = null;
+      if (item.variantId) {
+        const variant = await db.getVariantById(item.variantId);
+        if (variant) {
+          variantPrice = variant.price;
+          variantMrp = variant.mrp;
+          variantStock = variant.stock;
+          variantWeight = variant.weightLabel || null;
+          variantFlavour = variant.flavourLabel || null;
+        }
+      }
       resolvedItems.push({
         id: item.id,
         productId: item.productId,
         quantity: item.quantity,
+        variantId: item.variantId || null,
+        variantPrice,
+        variantMrp,
+        variantStock,
+        variantWeight,
+        variantFlavour,
         product,
       });
     }
@@ -205,9 +259,9 @@ export async function getCartAction() {
   return { id: cart.id, userId: cart.userId, items: resolvedItems };
 }
 
-export async function addToCartAction(productId: string, quantity: number = 1) {
+export async function addToCartAction(productId: string, quantity: number = 1, variantId?: string | null) {
   const identifier = await getActiveIdentifier();
-  await db.addToCart(identifier, productId, quantity);
+  await db.addToCart(identifier, productId, quantity, variantId);
   return await getCartAction();
 }
 
@@ -256,7 +310,7 @@ export async function toggleWishlistAction(productId: string) {
     return { success: false, error: "Please log in to manage your wishlist." };
   }
   const wishlist = await db.toggleWishlist(session.id, productId);
-  
+
   const resolvedItems = [];
   for (const item of wishlist.items) {
     const product = await db.getProductById(item.productId);
@@ -298,7 +352,16 @@ export async function createOrderAction(data: {
   total: number;
   paymentStatus?: string;
   razorpayOrderId?: string;
-  items: { productId: string; quantity: number; price: number; productName?: string; productImage?: string; }[];
+  items: {
+    productId: string;
+    quantity: number;
+    price: number;
+    productName?: string;
+    productImage?: string;
+    variantId?: string | null;
+    variantWeight?: string | null;
+    variantFlavour?: string | null;
+  }[];
 }) {
   const session = await getSession();
   const userId = session ? session.id : null;
@@ -326,7 +389,7 @@ export async function applyCouponAction(code: string, cartTotal: number) {
   try {
     const trimmedCode = code.trim();
     console.log(`[Coupon Validation] Entered Code: "${trimmedCode}", Cart Total: $${cartTotal}`);
-    
+
     const coupon = await db.getCouponByCode(trimmedCode);
     console.log(`[Coupon Validation] Database Result:`, coupon ? `Found (ID: ${coupon.id})` : `Not Found`);
 
@@ -334,7 +397,7 @@ export async function applyCouponAction(code: string, cartTotal: number) {
       console.log(`[Coupon Validation] Result: Failed - Coupon not found.`);
       return { success: false, error: "Coupon not found." };
     }
-    
+
     if (!coupon.isActive) {
       console.log(`[Coupon Validation] Result: Failed - Coupon disabled.`);
       return { success: false, error: "Coupon disabled." };
@@ -622,7 +685,7 @@ export async function adminGetOrdersAction() {
 export async function adminUpdateOrderStatusAction(orderId: string, status: string) {
   await ensureAdmin();
   const order = await db.updateOrderStatus(orderId, status);
-  
+
   // Send email update via Resend helper
   if (order) {
     try {
@@ -630,37 +693,37 @@ export async function adminUpdateOrderStatusAction(orderId: string, status: stri
       const productMap = Object.fromEntries(productsList.map((p) => [p.id, p]));
       const invoiceHtml = generateInvoiceHTML(order, productMap);
       await sendEmail(
-        order.email, 
-        `Stack Shack Nutrition: Order Status Update #${order.invoiceNumber || order.id.substring(0, 8)}`, 
+        order.email,
+        `Stack Shack Nutrition: Order Status Update #${order.invoiceNumber || order.id.substring(0, 8)}`,
         `<h3>Hello ${order.name},</h3><p>Your order status has been updated to: <strong>${status}</strong>.</p><hr />` + invoiceHtml
       );
     } catch (e) {
       console.error(e);
     }
   }
-  
+
   return { success: true, order };
 }
 
 export async function adminUpdateOrderTrackingAction(orderId: string, trackingNumber: string) {
   await ensureAdmin();
   const order = await db.updateOrderTracking(orderId, trackingNumber);
-  
+
   if (order) {
     try {
       const productsList = await db.getProducts();
       const productMap = Object.fromEntries(productsList.map((p) => [p.id, p]));
       const invoiceHtml = generateInvoiceHTML(order, productMap);
       await sendEmail(
-        order.email, 
-        `Stack Shack Nutrition: Order Shipped #${order.invoiceNumber || order.id.substring(0, 8)}`, 
+        order.email,
+        `Stack Shack Nutrition: Order Shipped #${order.invoiceNumber || order.id.substring(0, 8)}`,
         `<h3>Order Dispatched!</h3><p>Your package has been shipped via standard mail.</p><p><strong>Tracking Number:</strong> ${trackingNumber}</p><hr />` + invoiceHtml
       );
     } catch (e) {
       console.error(e);
     }
   }
-  
+
   return { success: true, order };
 }
 
@@ -678,7 +741,7 @@ export async function adminGetCustomerOrdersAction(customerId: string) {
 
 export async function adminGetKPIsAction() {
   await ensureAdmin();
-  
+
   const allOrders = await db.getOrders();
   const allProducts = await db.getProducts();
 
@@ -802,7 +865,7 @@ export async function verifyPaymentAction(data: {
       data.razorpayPaymentId,
       data.razorpaySignature
     );
-    
+
     if (updated) {
       // Send receipt/invoice email
       try {

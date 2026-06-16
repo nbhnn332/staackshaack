@@ -69,7 +69,7 @@ export default function CartPage() {
     setCouponError("");
     setDiscountAmount(0);
     setActiveCoupon(null);
-    
+
     const code = coupon.trim();
     if (!code) return;
 
@@ -94,9 +94,12 @@ export default function CartPage() {
       const orderItems = cart.map(item => ({
         productId: item.productId,
         quantity: item.quantity,
-        price: item.product.price,
+        price: item.variantPrice ?? item.product.price,
         productName: item.product.name,
         productImage: item.product.images?.[0] || "",
+        variantId: item.variantId || null,
+        variantWeight: item.variantWeight || null,
+        variantFlavour: item.variantFlavour || null,
       }));
       const res = await createOrderAction({
         email: pendingOrderDetails.email,
@@ -137,9 +140,12 @@ export default function CartPage() {
       const orderItems = cart.map(item => ({
         productId: item.productId,
         quantity: item.quantity,
-        price: item.product.price,
+        price: item.variantPrice ?? item.product.price,
         productName: item.product.name,
         productImage: item.product.images?.[0] || "",
+        variantId: item.variantId || null,
+        variantWeight: item.variantWeight || null,
+        variantFlavour: item.variantFlavour || null,
       }));
       await createOrderAction({
         email: pendingOrderDetails.email,
@@ -176,7 +182,7 @@ export default function CartPage() {
       }
 
       const order = initRes.order;
-      
+
       if (order.simulated) {
         setSimulatedOrder(order);
         const detailedAddress = JSON.stringify({
@@ -206,9 +212,12 @@ export default function CartPage() {
       const orderItems = cart.map(item => ({
         productId: item.productId,
         quantity: item.quantity,
-        price: item.product.price,
+        price: item.variantPrice ?? item.product.price,
         productName: item.product.name,
         productImage: item.product.images?.[0] || "",
+        variantId: item.variantId || null,
+        variantWeight: item.variantWeight || null,
+        variantFlavour: item.variantFlavour || null,
       }));
       const dbOrderRes = await createOrderAction({
         email,
@@ -319,7 +328,7 @@ export default function CartPage() {
   return (
     <div className="w-full bg-[#FFFFFF] min-h-screen py-8 mb-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        
+
         {/* Header */}
         <div className="border-b border-gray-100 pb-5">
           <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 flex items-center gap-2">
@@ -344,12 +353,12 @@ export default function CartPage() {
           </div>
         ) : (
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            
+
             {/* Cart Items List */}
             <div className="lg:col-span-7 space-y-4">
               {cart.map((item) => {
                 const p = item.product;
-                
+
                 const linePrice = p.price;
 
                 // Helper to draw graphics
@@ -359,7 +368,7 @@ export default function CartPage() {
                   else if (name.includes("Vitamin")) grad = "from-teal-400 to-emerald-500";
                   else if (name.includes("Bars")) grad = "from-amber-500 to-yellow-600";
                   else if (name.includes("Creatine")) grad = "from-purple-600 to-pink-500";
-                  
+
                   return (
                     <div className={`h-full w-full bg-gradient-to-br ${grad} flex items-center justify-center relative`}>
                       <svg className="w-8 h-8 text-white/95" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -381,9 +390,13 @@ export default function CartPage() {
                     <div className="flex items-center gap-4 min-w-0">
                       {/* Product Visual */}
                       <div className="h-16 w-16 rounded-xl overflow-hidden bg-gray-50 shrink-0">
-                        {drawIcon(p.name)}
+                        <img
+                          src={item.productImage || p.images?.[0] || "/placeholder.png"}
+                          alt={p.name}
+                          className="h-full w-full object-cover"
+                        />
                       </div>
-                      
+
                       {/* Details */}
                       <div className="min-w-0">
                         <Link href={`/shop/${p.slug}`}>
@@ -392,7 +405,14 @@ export default function CartPage() {
                           </h3>
                         </Link>
 
-                        <p className="text-xs text-gray-400 mt-0.5">Price: {formatINR(linePrice)}</p>
+                        {/* Variant info */}
+                        {(item.variantWeight || item.variantFlavour) && (
+                          <p className="text-[11px] text-[#4285F4] font-semibold mt-0.5">
+                            {[item.variantWeight, item.variantFlavour].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
+
+                        <p className="text-xs text-gray-400 mt-0.5">Price: {formatINR(item.variantPrice ?? linePrice)}</p>
                       </div>
                     </div>
 
@@ -417,7 +437,7 @@ export default function CartPage() {
 
                       {/* Total Line price */}
                       <span className="text-sm font-extrabold text-gray-950 min-w-[55px] text-right">
-                        {formatINR(linePrice * item.quantity)}
+                        {formatINR((item.variantPrice ?? linePrice) * item.quantity)}
                       </span>
 
                       {/* Remove */}
@@ -435,7 +455,7 @@ export default function CartPage() {
 
             {/* Order Summary & Checkout Card */}
             <div className="lg:col-span-5 space-y-6">
-              
+
               {/* Coupon Form */}
               <div className="rounded-2xl border border-gray-100 p-5 bg-white shadow-xs">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
@@ -462,7 +482,7 @@ export default function CartPage() {
                 {activeCoupon && (
                   <p className="text-[11px] text-emerald-500 mt-2 font-medium flex items-center gap-1">
                     <Ticket className="h-3 w-3" />
-                    Coupon &ldquo;{activeCoupon}&rdquo; active ({activeCoupon.includes("10") ? "10%" : "20%"} discount applied!)
+                    Coupon &ldquo;{activeCoupon}&rdquo; active ({activeCoupon.includes("") ? "" : ""} discount applied!)
                   </p>
                 )}
               </div>
@@ -470,7 +490,7 @@ export default function CartPage() {
               {/* Summary calculations */}
               <div className="rounded-2xl border border-gray-100 p-6 bg-white shadow-xs">
                 <h3 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-3">Order Summary</h3>
-                
+
                 <div className="mt-4 space-y-3.5 text-sm">
                   <div className="flex justify-between text-gray-500">
                     <span>Subtotal</span>
@@ -503,7 +523,7 @@ export default function CartPage() {
                     <span>Proceed to Checkout</span>
                     <ArrowRight className="h-4.5 w-4.5" />
                   </Button>
-                  
+
                   <DialogContent className="max-w-md rounded-2xl p-6">
                     <DialogHeader>
                       <DialogTitle className="text-xl font-bold text-gray-900">Checkout Delivery</DialogTitle>
@@ -513,7 +533,7 @@ export default function CartPage() {
                     </DialogHeader>
 
                     <form onSubmit={handleCheckoutSubmit} className="space-y-4 mt-4">
-                       <div className="space-y-1.5">
+                      <div className="space-y-1.5">
                         <label className="text-xs font-bold text-gray-400 uppercase tracking-wide">Full Name</label>
                         <input
                           type="text"

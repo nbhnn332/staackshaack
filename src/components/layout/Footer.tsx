@@ -21,15 +21,15 @@ export default function Footer() {
             <div className="flex flex-col space-y-2 text-sm">
               <span className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-[#4285F4]" />
-                123 Performance Way, Fitness Suite A
+                Thuvvur, Kerala, 679327
               </span>
               <span className="flex items-center gap-2">
                 <Phone className="h-4 w-4 text-[#4285F4]" />
-                +1 (800) 555-GAIN
+                +91 70347 16006
               </span>
               <span className="flex items-center gap-2">
                 <Mail className="h-4 w-4 text-[#4285F4]" />
-                support@stackshack.com
+                stackshacknutrition@gmail.com
               </span>
             </div>
           </div>

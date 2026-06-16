@@ -24,11 +24,19 @@ import {
 import { Category, Product } from "@/lib/mock-db";
 import { SessionUser } from "@/lib/auth";
 
-interface CartItem {
+// Extended cart item includes resolved variant info from getCartAction
+export interface CartItem {
   id: string;
   productId: string;
   quantity: number;
   product: Product;
+  variantId?: string | null;
+  variantPrice?: number;
+  variantMrp?: number | null;
+  variantStock?: number;
+  variantWeight?: string | null;
+  variantFlavour?: string | null;
+  productImage?: string;
 }
 
 interface WishlistItem {
@@ -49,7 +57,7 @@ interface StoreContextProps {
   wishlistCount: number;
   refreshCart: () => Promise<void>;
   refreshWishlist: () => Promise<void>;
-  addToCart: (productId: string, quantity?: number) => Promise<void>;
+  addToCart: (productId: string, quantity?: number, variantId?: string | null) => Promise<void>;
   updateCartItem: (cartItemId: string, quantity: number) => Promise<void>;
   removeFromCart: (cartItemId: string) => Promise<void>;
   clearCart: () => Promise<void>;
@@ -75,10 +83,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Computed values
+  // Computed values — use variant price when available
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
   const cartTotal = cart.reduce((total, item) => {
-    return total + item.product.price * item.quantity;
+    const price = item.variantPrice ?? item.product.price;
+    return total + price * item.quantity;
   }, 0);
   const wishlistCount = wishlist.length;
 
@@ -87,11 +96,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async function init() {
       try {
         setLoading(true);
-        // Get user session
         const session = await getUserSession();
         setUser(session);
 
-        // Fetch categories and products
         const [cats, prods] = await Promise.all([
           getCategoriesAction(),
           getProductsAction(),
@@ -99,11 +106,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setCategories(Array.isArray(cats) ? cats : []);
         setProducts(Array.isArray(prods) ? prods : []);
 
-        // Fetch cart
         const cartData = await getCartAction();
-        setCart(cartData.items as any);
+        setCart(cartData.items as CartItem[]);
 
-        // Fetch wishlist if logged in
         if (session) {
           const wishData = await getWishlistAction();
           setWishlist(wishData.items as any);
@@ -119,7 +124,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const refreshCart = async () => {
     const cartData = await getCartAction();
-    setCart(cartData.items as any);
+    setCart(cartData.items as CartItem[]);
   };
 
   const refreshWishlist = async () => {
@@ -132,11 +137,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const addToCart = async (productId: string, quantity: number = 1) => {
+  const addToCart = async (productId: string, quantity: number = 1, variantId?: string | null) => {
     setLoading(true);
     try {
-      const cartData = await addToCartAction(productId, quantity);
-      setCart(cartData.items as any);
+      const cartData = await addToCartAction(productId, quantity, variantId);
+      setCart(cartData.items as CartItem[]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -148,7 +153,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const cartData = await updateCartItemAction(cartItemId, quantity);
-      setCart(cartData.items as any);
+      setCart(cartData.items as CartItem[]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -160,7 +165,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const cartData = await removeFromCartAction(cartItemId);
-      setCart(cartData.items as any);
+      setCart(cartData.items as CartItem[]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -172,7 +177,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const cartData = await clearCartAction();
-      setCart(cartData.items as any);
+      setCart(cartData.items as CartItem[]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -224,7 +229,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const res = await loginAction(email, password);
       if (res.success && res.user) {
         setUser(res.user);
-        // Refresh cart & wishlist after login
         await Promise.all([refreshCart(), refreshWishlist()]);
         return { success: true, user: res.user };
       }
@@ -293,7 +297,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const orderItems = cart.map(item => ({
         productId: item.productId,
         quantity: item.quantity,
-        price: item.product.price,
+        price: item.variantPrice ?? item.product.price,
+        variantId: item.variantId || null,
+        variantWeight: item.variantWeight || null,
+        variantFlavour: item.variantFlavour || null,
       }));
       const res = await createOrderAction({
         email: data.email,
@@ -303,7 +310,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         discount: data.discount,
         tax: 0,
         shippingFee: 50,
-        total: Math.max(0, cartTotal - data.discount + 50), // subtotal - discount + ₹50 shipping
+        total: Math.max(0, cartTotal - data.discount + 50),
         items: orderItems,
       });
       if (res.success) {
