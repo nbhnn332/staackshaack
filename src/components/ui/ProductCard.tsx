@@ -191,7 +191,11 @@ export default function ProductCard({ product }: ProductCardProps) {
 
 <Link href={`/shop/${product.slug}`}>
   <button
+<<<<<<< HEAD
     className="h-9 px-1 rounded-full bg-[#4285F4] text-white text-xs font-semibold transition-all hover:bg-[#3367D6] active:scale-95 shadow-sm cursor-pointer"
+=======
+    className="h-9 px-2 rounded-full bg-[#4285F4] text-white text-xs font-semibold transition-all hover:bg-[#3367D6] active:scale-95 shadow-sm cursor-pointer"
+>>>>>>> 085203f (Update ProductCard.tsx)
   >
     View Product
   </button>
