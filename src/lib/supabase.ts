@@ -51,11 +51,8 @@ function getSupabaseAdminClient(): SupabaseClient {
   console.log("==========================");
 
   if (!supabaseUrl || !supabaseServiceKey || supabaseUrl.includes("your_supabase")) {
-    console.warn(
-      "⚠️ SUPABASE_SERVICE_ROLE_KEY not configured. Falling back to anon client for admin operations."
-    );
-    _supabaseAdmin = getSupabaseClient();
-    return _supabaseAdmin;
+    console.error("⚠️ SUPABASE_SERVICE_ROLE_KEY not configured or Supabase URL invalid. Admin operations require a service role key.");
+    throw new Error("Supabase admin client initialization failed due to missing service role key.");
   }
 
   _supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);

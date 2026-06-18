@@ -1,6 +1,34 @@
 import { supabase, supabaseAdmin } from "./supabase";
 import { Product, Category, User, Cart, Wishlist, Order, Banner, Coupon, Settings, ProductVariant } from "./mock-db";
 
+// Simple in‑memory cache for rarely‑changing data
+const cacheStore = new Map<string, { value: any; expires: number }>();
+
+/**
+ * Retrieve a cached value or compute it via fetchFn.
+ * ttlMs defaults to 5 minutes.
+ */
+async function getCached<T>(key: string, fetchFn: () => Promise<T>, ttlMs: number = 5 * 60 * 1000): Promise<T> {
+  const now = Date.now();
+  const entry = cacheStore.get(key);
+  if (entry && entry.expires > now) {
+    return entry.value as T;
+  }
+  const value = await fetchFn();
+  cacheStore.set(key, { value, expires: now + ttlMs });
+  return value;
+}
+
+/** Clear specific cache entry or all */
+export function clearCache(key?: string) {
+  if (key) {
+    cacheStore.delete(key);
+  } else {
+    cacheStore.clear();
+  }
+}
+
+
 const generateId = () => crypto.randomUUID();
 
 // ──────────────────────────────────────────────
@@ -90,8 +118,8 @@ function mapOrder(row: any): Order {
       productId: i.product_id,
       quantity: i.quantity,
       price: i.price,
-      weight: i.weight || 1,
-      weightUnit: i.weight_unit || 'kg',
+      weight: i.weight ?? null,
+weightUnit: i.weight_unit ?? null,
       productName: i.product_name || undefined,
       productImage: i.product_image || undefined,
       variantId: i.variant_id || null,
@@ -158,11 +186,16 @@ function mapSettings(row: any): Settings {
 export const db = {
   // ── CATEGORIES ──────────────────────────────
   async getCategories(onlyActive: boolean = false): Promise<Category[]> {
-    let query = supabase.from("categories").select("*").order("name", { ascending: true });
-    if (onlyActive) query = query.eq("is_active", true);
-    const { data, error } = await query;
-    if (error) { console.error("Supabase getCategories error:", error); return []; }
-    return (data || []).map(mapCategory);
+    const fetch = async () => {
+      let query = supabase.from("categories").select("*").order("name", { ascending: true });
+      if (onlyActive) query = query.eq("is_active", true);
+      const { data, error } = await query;
+      if (error) { console.error("Supabase getCategories error:", error); return []; }
+      return (data || []).map(mapCategory);
+    };
+    const cacheKey = `categories_${onlyActive}`;
+    // Cache for 5 minutes
+    return getCached(cacheKey, fetch);
   },
 
   async addCategory(name: string, slug: string, image?: string): Promise<Category> {
@@ -172,6 +205,8 @@ export const db = {
       .select()
       .single();
     if (error) throw new Error(`addCategory failed: ${error.message}`);
+    // Clear category cache after addition
+    clearCache();
     return mapCategory(data);
   },
 
@@ -188,12 +223,16 @@ export const db = {
       .select()
       .single();
     if (error) { console.error("Supabase updateCategory error:", error); return null; }
+    // Clear category cache after update
+    clearCache();
     return mapCategory(row);
   },
 
   async deleteCategory(id: string): Promise<boolean> {
     const { error } = await supabase.from("categories").delete().eq("id", id);
     if (error) { console.error("Supabase deleteCategory error:", error); return false; }
+    // Clear category cache after deletion
+    clearCache();
     return true;
   },
 
@@ -206,55 +245,58 @@ export const db = {
     isNewArrival?: boolean;
     onlyActive?: boolean;
   }): Promise<Product[]> {
-    let q = supabase.from("products").select("*").order("created_at", { ascending: false });
+    const fetch = async () => {
+      let q = supabase.from("products").select("*").order("created_at", { ascending: false });
 
-    if (options?.isFeatured !== undefined) q = q.eq("is_featured", options.isFeatured);
-    if (options?.isBestSeller !== undefined) q = q.eq("is_best_seller", options.isBestSeller);
-    if (options?.isNewArrival !== undefined) q = q.eq("is_new_arrival", options.isNewArrival);
-    if (options?.onlyActive !== undefined) q = q.eq("is_active", options.onlyActive);
+      if (options?.isFeatured !== undefined) q = q.eq("is_featured", options.isFeatured);
+      if (options?.isBestSeller !== undefined) q = q.eq("is_best_seller", options.isBestSeller);
+      if (options?.isNewArrival !== undefined) q = q.eq("is_new_arrival", options.isNewArrival);
+      if (options?.onlyActive !== undefined) q = q.eq("is_active", options.onlyActive);
 
-    if (options?.categorySlug) {
-      const { data: cat } = await supabase
-        .from("categories")
-        .select("id")
-        .eq("slug", options.categorySlug)
-        .single();
-      if (!cat) return [];
-      q = q.eq("category_id", cat.id);
-    }
+      if (options?.categorySlug) {
+        const { data: cat } = await supabase.from("categories").select("id").eq("slug", options.categorySlug).single();
+        if (!cat) return [];
+        q = q.eq("category_id", cat.id);
+      }
 
-    if (options?.query) {
-      q = q.or(`name.ilike.%${options.query}%,description.ilike.%${options.query}%`);
-    }
+      if (options?.query) {
+        q = q.or(`name.ilike.%${options.query}%,description.ilike.%${options.query}%`);
+      }
 
-    const { data, error } = await q;
-    if (error) { console.error("Supabase getProducts error:", error); return []; }
-    return (data || []).map(mapProduct);
+      const { data, error } = await q;
+      if (error) { console.error("Supabase getProducts error:", error); return []; }
+      return (data || []).map(mapProduct);
+    };
+    const cacheKey = `products_${JSON.stringify(options || {})}`;
+    // Cache for 5 minutes (or you can choose infinite for static calls)
+    return getCached(cacheKey, fetch);
   },
 
   async getProductBySlug(slug: string): Promise<Product | null> {
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .eq("slug", slug)
-      .single();
-    if (error || !data) return null;
-    return mapProduct(data);
+    const fetch = async () => {
+      const { data, error } = await supabase.from("products").select("*").eq("slug", slug).single();
+      if (error || !data) return null;
+      return mapProduct(data);
+    };
+    const cacheKey = `product_slug_${slug}`;
+    // Cache for 5 minutes
+    return getCached(cacheKey, fetch);
   },
 
   async getProductById(id: string): Promise<Product | null> {
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .eq("id", id)
-      .single();
-    if (error || !data) return null;
-    return mapProduct(data);
+    const fetch = async () => {
+      const { data, error } = await supabase.from("products").select("*").eq("id", id).single();
+      if (error || !data) return null;
+      return mapProduct(data);
+    };
+    const cacheKey = `product_id_${id}`;
+    // Cache for 5 minutes
+    return getCached(cacheKey, fetch);
   },
 
   async addProduct(data: Omit<Product, "id">): Promise<Product> {
     const productId = generateId();
-    const { data: row, error } = await supabase
+    const { data: row, error } = await supabaseAdmin
       .from("products")
       .insert({
         id: productId,
@@ -276,8 +318,21 @@ export const db = {
       .select()
       .single();
     if (error) throw new Error(`addProduct failed: ${error.message}`);
+    // Clear cached product and category listings
+    clearCache();
+    // Directly map and return the inserted row using the admin client
+    return mapProduct(row);
+  },
 
-    return this.getProductById(productId) as Promise<Product>;
+  // Batch fetch multiple products by IDs to avoid N+1 queries
+  async getProductsByIds(ids: string[]): Promise<Product[]> {
+    if (!ids.length) return [];
+    const { data, error } = await supabase.from("products").select("*").in("id", ids);
+    if (error) {
+      console.error("Supabase getProductsByIds error:", error);
+      return [];
+    }
+    return (data || []).map(mapProduct);
   },
 
   async updateProduct(id: string, data: Partial<Omit<Product, "id">>): Promise<Product | null> {
@@ -304,35 +359,38 @@ export const db = {
       .select()
       .single();
     if (error) { console.error("Supabase updateProduct error:", error); return null; }
-
+    // Clear cache after update
+    clearCache();
     return this.getProductById(id);
   },
 
   async deleteProduct(id: string): Promise<boolean> {
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) { console.error("Supabase deleteProduct error:", error); return false; }
+    // Clear product caches after deletion
+    clearCache();
     return true;
   },
 
   // ── PRODUCT VARIANTS ─────────────────────────
   async getVariantsByProductId(productId: string): Promise<ProductVariant[]> {
-    const { data, error } = await supabase
-      .from("product_variants")
-      .select("*")
-      .eq("product_id", productId)
-      .order("created_at", { ascending: true });
-    if (error) { console.error("Supabase getVariants error:", error); return []; }
-    return (data || []).map(mapProductVariant);
+    const fetch = async () => {
+      const { data, error } = await supabase.from("product_variants").select("*").eq("product_id", productId).order("created_at", { ascending: true });
+      if (error) { console.error("Supabase getVariants error:", error); return []; }
+      return (data || []).map(mapProductVariant);
+    };
+    const cacheKey = `variants_product_${productId}`;
+    return getCached(cacheKey, fetch);
   },
 
   async getVariantById(id: string): Promise<ProductVariant | null> {
-    const { data, error } = await supabase
-      .from("product_variants")
-      .select("*")
-      .eq("id", id)
-      .single();
-    if (error || !data) return null;
-    return mapProductVariant(data);
+    const fetch = async () => {
+      const { data, error } = await supabase.from("product_variants").select("*").eq("id", id).single();
+      if (error || !data) return null;
+      return mapProductVariant(data);
+    };
+    const cacheKey = `variant_id_${id}`;
+    return getCached(cacheKey, fetch);
   },
 
   async addVariant(productId: string, data: Omit<ProductVariant, "id" | "productId" | "createdAt">): Promise<ProductVariant> {
@@ -492,24 +550,24 @@ export const db = {
 
   // ── CARTS ───────────────────────────────────
   async getCart(userIdOrGuestId: string): Promise<Cart> {
-    let { data: cart } = await supabase
-      .from("carts")
-      .select("*, cart_items(*)")
-      .eq("user_id", userIdOrGuestId)
-      .single();
-
-    if (!cart) {
-      const { data: newCart, error } = await supabase
-        .from("carts")
-        .insert({ id: generateId(), user_id: userIdOrGuestId })
-        .select("*, cart_items(*)")
-        .single();
-      if (error) {
+    const { data, error } = await supabase.from("carts").select("*, cart_items(*)").eq("user_id", userIdOrGuestId).single();
+    if (!data) {
+      const { data: newCart, error: insertErr } = await supabase.from("carts").insert({ id: generateId(), user_id: userIdOrGuestId }).select("*, cart_items(*)").single();
+      if (insertErr) {
         return { id: generateId(), userId: userIdOrGuestId, items: [] };
       }
-      cart = newCart;
+      return {
+        id: newCart.id,
+        userId: newCart.user_id,
+        items: (newCart.cart_items || []).map((item: any) => ({
+          id: item.id,
+          productId: item.product_id,
+          quantity: item.quantity,
+          variantId: item.variant_id || null,
+        })),
+      };
     }
-
+    const cart = data;
     return {
       id: cart.id,
       userId: cart.user_id,
@@ -1003,7 +1061,7 @@ export const db = {
     return mapSettings(created);
   },
 
-  async updateSettings(data: Partial<Omit<Settings, "id">>): Promise<Settings> {
+  async updateSettings(data: Partial<Omit<Settings, "id">>) : Promise<Settings> {
     const update: any = {};
     if (data.websiteName !== undefined) update.website_name = data.websiteName;
     if (data.storeEmail !== undefined) update.store_email = data.storeEmail;
@@ -1022,16 +1080,11 @@ export const db = {
     if (data.cloudinaryApiKey !== undefined) update.cloudinary_api_key = data.cloudinaryApiKey;
     if (data.cloudinaryApiSecret !== undefined) update.cloudinary_api_secret = data.cloudinaryApiSecret;
 
-    const { data: row, error } = await supabase
-      .from("settings")
-      .update(update)
-      .eq("id", "global-settings")
-      .select();
-
-    console.log("UPDATE RESULT:", row);
-    console.log("UPDATE ERROR:", error);
+    const { data: row, error } = await supabase.from("settings").update(update).eq("id", "global-settings").select();
 
     if (error) { console.error("Supabase updateSettings error:", error); return this.getSettings(); }
+    // Invalidate cache after update
+    clearCache('settings');
     return mapSettings(row);
   },
 
@@ -1062,4 +1115,6 @@ export const db = {
     }
     return results;
   },
+  // Export cache utilities
+  clearCache,
 };

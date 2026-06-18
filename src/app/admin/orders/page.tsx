@@ -563,7 +563,7 @@ export default function AdminOrders() {
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center text-gray-600">
-                                {variantLabel || `${item.weight} ${item.weightUnit}`}
+                               {variantLabel ? variantLabel : "-"}
                               </td>
                               <td className="px-4 py-3 text-center text-gray-800 font-bold">{item.quantity}</td>
                               <td className="px-4 py-3 text-right text-gray-800">{formatINR(item.price)}</td>

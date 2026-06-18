@@ -93,12 +93,12 @@ export default function CategoriesPage() {
                 >
                   <div className="flex items-center space-x-4">
                     {/* Circle icon */}
-                    <div className={`h-12 w-12 rounded-full bg-gradient-to-br ${catStyles.split(" ")[0]} ${catStyles.split(" ")[1]} flex items-center justify-center text-white shrink-0 shadow-sm group-hover:scale-105 transition-transform overflow-hidden relative`}>
+                    <div className="h-15 w-15 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform overflow-hidden relative border border-gray-200">
                       {category.image && !catImgErrors[category.id] ? (
                         <img 
                           src={category.image} 
                           alt={category.name}
-                          className="w-full h-full object-contain p-1"
+                          className="w-full h-full object-contain p-0.1"
                           onError={() => setCatImgErrors(prev => ({ ...prev, [category.id]: true }))}
                         />
                       ) : (

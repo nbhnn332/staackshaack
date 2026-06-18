@@ -149,8 +149,8 @@ export default function Home() {
                       />
                     </picture>
                     {/* Readability gradient overlays */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-transparent md:block hidden"></div>
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/85 via-black/55 to-black/30 md:hidden block"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/13 to-transparent md:block hidden"></div>
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/85 via-black/13 to-black/30 md:hidden block"></div>
                   </div>
                 )}
 
@@ -255,11 +255,11 @@ export default function Home() {
         <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
           {categories.map((category) => {
             // Pick a matching color scheme for Category Circles
-            let catColor = "bg-blue-50 text-blue-600";
-            if (category.name === "Pre-Workouts") catColor = "bg-red-50 text-red-600";
-            else if (category.name === "Vitamins") catColor = "bg-teal-50 text-teal-600";
-            else if (category.name === "Snacks") catColor = "bg-amber-50 text-amber-600";
-            else if (category.name === "Creatine") catColor = "bg-purple-50 text-purple-600";
+            let catColor = "bg-transparent";
+            if (category.name === "Pre-Workouts") catColor = "bg-transparent";
+            else if (category.name === "Vitamins") catColor = "bg-transparent";
+            else if (category.name === "Snacks") catColor = "bg-transparent";
+            else if (category.name === "Creatine") catColor = "bg-transparent";
 
             return (
               <Link

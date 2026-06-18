@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
 import {
   getUserSession,
   loginAction,
@@ -122,12 +122,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     init();
   }, []);
 
-  const refreshCart = async () => {
+  const refreshCart = useCallback(async () => {
     const cartData = await getCartAction();
     setCart(cartData.items as CartItem[]);
-  };
+  }, []);
 
-  const refreshWishlist = async () => {
+
+  const refreshWishlist = useCallback(async () => {
     const session = await getUserSession();
     if (session) {
       const wishData = await getWishlistAction();
@@ -135,9 +136,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } else {
       setWishlist([]);
     }
-  };
+  }, []);
 
-  const addToCart = async (productId: string, quantity: number = 1, variantId?: string | null) => {
+
+  const addToCart = useCallback(async (productId: string, quantity: number = 1, variantId?: string | null) => {
     setLoading(true);
     try {
       const cartData = await addToCartAction(productId, quantity, variantId);
@@ -147,9 +149,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const updateCartItem = async (cartItemId: string, quantity: number) => {
+
+  const updateCartItem = useCallback(async (cartItemId: string, quantity: number) => {
     setLoading(true);
     try {
       const cartData = await updateCartItemAction(cartItemId, quantity);
@@ -159,9 +162,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const removeFromCart = async (cartItemId: string) => {
+
+  const removeFromCart = useCallback(async (cartItemId: string) => {
     setLoading(true);
     try {
       const cartData = await removeFromCartAction(cartItemId);
@@ -171,9 +175,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const clearCart = async () => {
+
+  const clearCart = useCallback(async () => {
     setLoading(true);
     try {
       const cartData = await clearCartAction();
@@ -183,9 +188,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const toggleWishlist = async (productId: string) => {
+  const toggleWishlist = useCallback(async (productId: string) => {
     if (!user) {
       return { success: false, error: "Please log in to add items to your wishlist." };
     }
@@ -202,9 +207,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
-  const moveAllWishlistToCart = async () => {
+  const moveAllWishlistToCart = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
@@ -217,13 +222,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, refreshCart, refreshWishlist]);
 
   const isInWishlist = (productId: string) => {
     return wishlist.some(item => item.productId === productId);
   };
 
-  const login = async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     setLoading(true);
     try {
       const res = await loginAction(email, password);
@@ -238,9 +243,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const signup = async (name: string, email: string, password: string) => {
+  const signup = useCallback(async (name: string, email: string, password: string) => {
     setLoading(true);
     try {
       const res = await signupAction(name, email, password);
@@ -255,9 +260,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     setLoading(true);
     try {
       await logoutAction();
@@ -269,7 +274,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const updatePassword = async (currentPassword: string, newPassword: string) => {
     return await updatePasswordAction(currentPassword, newPassword);
@@ -291,7 +296,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const checkout = async (data: { email: string; name: string; address: string; couponCode?: string; discount: number }) => {
+  const checkout = useCallback(async (data: { email: string; name: string; address: string; couponCode?: string; discount: number }) => {
     setLoading(true);
     try {
       const orderItems = cart.map(item => ({
@@ -323,9 +328,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [cart, cartTotal]);
 
-  const refreshCatalog = async () => {
+  const refreshCatalog = useCallback(async () => {
     try {
       const [cats, prods] = await Promise.all([
         getCategoriesAction(),
@@ -336,41 +341,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error("Failed to refresh catalog:", e);
     }
-  };
+  }, []);
+
+  const value = useMemo(() => ({
+    user,
+    cart,
+    wishlist,
+    categories,
+    products,
+    loading,
+    cartCount,
+    cartTotal,
+    wishlistCount,
+    refreshCart,
+    refreshWishlist,
+    addToCart,
+    updateCartItem,
+    removeFromCart,
+    clearCart,
+    toggleWishlist,
+    moveAllWishlistToCart,
+    isInWishlist,
+    login,
+    signup,
+    logout,
+    updatePassword,
+    updateProfile,
+    checkout,
+    refreshCatalog,
+  }), [user, cart, wishlist, categories, products, loading, cartCount, cartTotal, wishlistCount, refreshCart, refreshWishlist, addToCart, updateCartItem, removeFromCart, clearCart, toggleWishlist, moveAllWishlistToCart, isInWishlist, login, signup, logout, updatePassword, updateProfile, checkout, refreshCatalog]);
 
   return (
-    <StoreContext.Provider
-      value={{
-        user,
-        cart,
-        wishlist,
-        categories,
-        products,
-        loading,
-        cartCount,
-        cartTotal,
-        wishlistCount,
-        refreshCart,
-        refreshWishlist,
-        addToCart,
-        updateCartItem,
-        removeFromCart,
-        clearCart,
-        toggleWishlist,
-        moveAllWishlistToCart,
-        isInWishlist,
-        login,
-        signup,
-        logout,
-        updatePassword,
-        updateProfile,
-        checkout,
-        refreshCatalog,
-      }}
-    >
+    <StoreContext.Provider value={value}>
       {children}
     </StoreContext.Provider>
   );
+
 }
 
 export function useStore() {

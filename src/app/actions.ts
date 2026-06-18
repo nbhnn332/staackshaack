@@ -543,72 +543,115 @@ export async function adminAddProductAction(data: {
   revalidatePath("/shop");
   revalidatePath("/");
   return { success: true, product };
-}
+};
 
-export async function adminUpdateProductAction(id: string, data: any) {
-  await ensureAdmin();
-  const updateData = { ...data };
-  if (data.images) {
-    const uploadedImages = [];
-    for (const img of data.images) {
-      if (img.startsWith("data:")) {
-        const url = await uploadImage(img);
-        uploadedImages.push(url);
-      } else {
-        uploadedImages.push(img);
-      }
-    }
-    updateData.images = uploadedImages;
+/**
+ * Update an existing product (admin only).
+ * Handles image uploads for any new base64 images provided.
+ */
+export async function adminUpdateProductAction(
+  id: string,
+  data: {
+    name: string;
+    slug: string;
+    description: string;
+    price: number;
+    compareAtPrice?: number;
+    images: string[]; // Base64 strings or URLs
+    categoryId: string;
+    isFeatured: boolean;
+    isBestSeller: boolean;
+    isNewArrival: boolean;
+    isActive: boolean;
+    stock: number;
+    weight: number;
+    weightUnit: string;
   }
-  const product = await db.updateProduct(id, updateData);
+) {
+  await ensureAdmin();
+  // Upload any new base64 images
+  const uploadedImages: string[] = [];
+  for (const img of data.images) {
+    if (img.startsWith("data:")) {
+      const url = await uploadImage(img);
+      uploadedImages.push(url);
+    } else {
+      uploadedImages.push(img);
+    }
+  }
+
+  const updated = await db.updateProduct(id, {
+    ...data,
+    compareAtPrice: data.compareAtPrice || null,
+    images: uploadedImages,
+  });
+
+  if (!updated) {
+    return { success: false, error: "Product not found or update failed." };
+  }
+
   revalidatePath("/shop");
-  revalidatePath(`/shop/${product?.slug}`);
   revalidatePath("/");
-  return { success: true, product };
+  return { success: true, product: updated };
 }
 
+/**
+ * Delete a product (admin only).
+ * Also removes all associated variants to keep the database clean.
+ */
 export async function adminDeleteProductAction(id: string) {
   await ensureAdmin();
-  await db.deleteProduct(id);
+  // Remove related variants first
+  try {
+    const variants = await db.getVariantsByProductId(id);
+    for (const variant of variants) {
+      await db.deleteVariant(variant.id);
+    }
+  } catch (e) {
+    console.error("Failed to delete product variants:", e);
+  }
+
+  const success = await db.deleteProduct(id);
+  if (!success) {
+    return { success: false, error: "Failed to delete product." };
+  }
   revalidatePath("/shop");
   revalidatePath("/");
   return { success: true };
+
 }
+
+
+
+
 
 // --- CATEGORY MANAGEMENT ---
 
-export async function adminAddCategoryAction(data: { name: string; slug: string; image: string }) {
+export async function adminAddCategoryAction(data: { name: string; slug: string; image?: string }) {
   await ensureAdmin();
-  let imageUrl = data.image;
-  if (data.image.startsWith("data:")) {
-    imageUrl = await uploadImage(data.image);
-  }
-  const category = await db.addCategory(data.name, data.slug, imageUrl);
-  revalidatePath("/categories");
-  revalidatePath("/");
+  const category = await db.addCategory(data.name, data.slug, data.image);
+  revalidatePath('/admin/categories');
+  revalidatePath('/');
   return { success: true, category };
 }
 
 export async function adminUpdateCategoryAction(id: string, data: { name?: string; slug?: string; image?: string; isActive?: boolean }) {
   await ensureAdmin();
-  const updateData = { ...data };
-  if (data.image && data.image.startsWith("data:")) {
-    updateData.image = await uploadImage(data.image);
-  }
-  const category = await db.updateCategory(id, updateData);
-  revalidatePath("/categories");
-  revalidatePath("/");
-  return { success: true, category };
+  const category = await db.updateCategory(id, data);
+  revalidatePath('/admin/categories');
+  revalidatePath('/');
+  return { success: !!category, category };
 }
 
 export async function adminDeleteCategoryAction(id: string) {
   await ensureAdmin();
-  await db.deleteCategory(id);
-  revalidatePath("/categories");
-  revalidatePath("/");
-  return { success: true };
+  const success = await db.deleteCategory(id);
+  revalidatePath('/admin/categories');
+  revalidatePath('/');
+  return { success };
 }
 
+// --- COUPON MANAGEMENT ---
 // --- COUPON MANAGEMENT ---
 
 export async function adminGetCouponsAction() {
