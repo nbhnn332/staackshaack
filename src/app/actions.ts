@@ -551,13 +551,13 @@ export async function adminAddProductAction(data: {
  */
 export async function adminUpdateProductAction(
   id: string,
-  data: {
+  data: Partial<{
     name: string;
     slug: string;
     description: string;
     price: number;
     compareAtPrice?: number;
-    images: string[]; // Base64 strings or URLs
+    images: string[];
     categoryId: string;
     isFeatured: boolean;
     isBestSeller: boolean;
@@ -566,11 +566,14 @@ export async function adminUpdateProductAction(
     stock: number;
     weight: number;
     weightUnit: string;
-  }
+  }>
 ) {
   await ensureAdmin();
   // Upload any new base64 images
   const uploadedImages: string[] = [];
+  const uploadedImages: string[] = [];
+
+if (data.images) {
   for (const img of data.images) {
     if (img.startsWith("data:")) {
       const url = await uploadImage(img);
@@ -579,12 +582,22 @@ export async function adminUpdateProductAction(
       uploadedImages.push(img);
     }
   }
+}
+      const url = await uploadImage(img);
+      uploadedImages.push(url);
+    } else {
+      uploadedImages.push(img);
+    }
+  }
 
   const updated = await db.updateProduct(id, {
-    ...data,
-    compareAtPrice: data.compareAtPrice || null,
-    images: uploadedImages,
-  });
+  ...data,
+  compareAtPrice:
+    data.compareAtPrice === undefined
+      ? undefined
+      : data.compareAtPrice || null,
+  ...(data.images ? { images: uploadedImages } : {}),
+});
 
   if (!updated) {
     return { success: false, error: "Product not found or update failed." };
